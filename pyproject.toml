@@ -1,0 +1,9 @@
+[project]
+name = "advent2024-python"
+version = "0.1.0"
+description = "Advent 2024 Python 3.13"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
