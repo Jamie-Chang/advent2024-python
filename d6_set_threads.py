@@ -132,7 +132,7 @@ def walk(grid: Grid, obstruction: Pair | None = None) -> Iterator[Pair]:
             return
 
 
-def has_loop[T: Hashable](it: Iterator[T]) -> bool:
+def loops[T: Hashable](it: Iterator[T]) -> bool:
     visited = set()
     for e in it:
         if e in visited:
@@ -154,7 +154,7 @@ if __name__ == "__main__":
         with timer(f"{workers = }: "):
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 results = executor.map(
-                    lambda node: has_loop(pairwise(walk(grid, node))),
+                    lambda node: loops(pairwise(walk(grid, node))),
                     candidates,
                 )
             print("part2", sum(1 for r in results if r), end="; ")

@@ -1,22 +1,12 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
 from typing import Hashable, Iterable, Iterator, Self, assert_never
-from datetime import UTC, datetime, timedelta
-
-
-@contextmanager
-def timer(message: str):
-    start = datetime.now(UTC)
-    try:
-        yield
-    finally:
-        print(
-            f"{message} {(datetime.now(UTC) - start) / timedelta(seconds=1)} s elapsed"
-        )
 
 
 type Pair = tuple[int, int]
@@ -34,6 +24,8 @@ def turn(direction: int) -> int:
 
 @dataclass(slots=True)
 class Ranges:
+    """Traversable location in the map."""
+
     rows: range
     cols: range
 
@@ -45,14 +37,6 @@ class Ranges:
                 return ((r, c) for r in self.rows[rows])
             case _ as other:
                 assert_never(other)
-
-    def __contains__(self, key: Pair) -> bool:
-        row, col = key
-
-        return row in self.rows and col in self.cols
-
-    def __iter__(self) -> Iterator[Pair]:
-        return ((row, col) for row in self.rows for col in self.cols)
 
     def walk(self, start: Pair, direction: int) -> Iterator[Pair]:
         match direction:
@@ -72,9 +56,7 @@ class Ranges:
 class Grid:
     start: Pair
     tiles: tuple[tuple[bool, ...], ...]
-
-    def get_ranges(self) -> Ranges:
-        return Ranges(range(len(self.tiles)), range(len(self.tiles[0])))
+    ranges: Ranges
 
     @classmethod
     def from_lines(cls, lines: Iterable[str]) -> Self:
@@ -92,7 +74,7 @@ class Grid:
             rows.append(tuple(row))
 
         assert start is not None
-        return cls(start, tuple(rows))
+        return cls(start, tuple(rows), Ranges(range(len(rows)), range(len(rows[0]))))
 
     def __getitem__(self, key: Pair) -> bool:
         return self.tiles[key[0]][key[1]]
@@ -106,13 +88,12 @@ def read_lines(path: Path) -> Iterator[Iterator[str]]:
 
 def walk(grid: Grid, obstruction: Pair | None = None) -> Iterator[Pair]:
     direction = up
-    ranges = grid.get_ranges()
     start = grid.start
 
     yield start
 
     while True:
-        walk = pairwise(ranges.walk(start, direction))
+        walk = pairwise(grid.ranges.walk(start, direction))
 
         for prev, curr in walk:
             if grid[curr] or curr == obstruction:
@@ -125,13 +106,24 @@ def walk(grid: Grid, obstruction: Pair | None = None) -> Iterator[Pair]:
             return
 
 
-def has_loop[T: Hashable](it: Iterator[T]) -> bool:
+def loops[T: Hashable](it: Iterator[T]) -> bool:
     visited = set()
     for e in it:
         if e in visited:
             return True
         visited.add(e)
     return False
+
+
+@contextmanager
+def timer(message: str):
+    start = datetime.now(UTC)
+    try:
+        yield
+    finally:
+        print(
+            f"{message} {(datetime.now(UTC) - start) / timedelta(seconds=1)} s elapsed"
+        )
 
 
 if __name__ == "__main__":
@@ -141,10 +133,13 @@ if __name__ == "__main__":
     path = set(walk(grid))
     print("part1", len(path))
 
-    with timer("time:"):
+    for workers in range(1, 16):
         candidates = (node for node in path if node != grid.start)
-        print(
-            "part2",
-            sum(1 for node in candidates if has_loop(pairwise(walk(grid, node)))),
-            end="; "
-        )
+
+        with timer(f"{workers = }: "):
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                results = executor.map(
+                    lambda node: loops(pairwise(walk(grid, node))),
+                    candidates,
+                )
+            print("part2", sum(1 for r in results if r), end="; ")

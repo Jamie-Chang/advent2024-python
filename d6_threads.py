@@ -73,9 +73,7 @@ class Ranges:
 class Grid:
     start: Pair
     tiles: tuple[tuple[bool, ...], ...]
-
-    def get_ranges(self) -> Ranges:
-        return Ranges(range(len(self.tiles)), range(len(self.tiles[0])))
+    ranges: Ranges
 
     @classmethod
     def from_lines(cls, lines: Iterable[str]) -> Self:
@@ -93,7 +91,7 @@ class Grid:
             rows.append(tuple(row))
 
         assert start is not None
-        return cls(start, tuple(rows))
+        return cls(start, tuple(rows), Ranges(range(len(rows)), range(len(rows[0]))))
 
     def __getitem__(self, key: Pair) -> bool:
         return self.tiles[key[0]][key[1]]
@@ -107,7 +105,7 @@ def read_lines(path: Path) -> Iterator[Iterator[str]]:
 
 def walk(grid: Grid, obstruction: Pair | None = None) -> Iterator[Pair]:
     direction = up
-    ranges = grid.get_ranges()
+    ranges = grid.ranges
     start = grid.start
     tiles = grid.tiles
 
@@ -127,7 +125,7 @@ def walk(grid: Grid, obstruction: Pair | None = None) -> Iterator[Pair]:
             return
 
 
-def has_loop[T: Hashable](it: Iterator[T]) -> bool:
+def loops[T: Hashable](it: Iterator[T]) -> bool:
     visited = set()
     for e in it:
         if e in visited:
@@ -143,13 +141,13 @@ if __name__ == "__main__":
     path = set(walk(grid))
     print("part1", len(path))
 
-    for workers in range(1, 12):
+    for workers in range(1, 16):
         candidates = (node for node in path if node != grid.start)
 
         with timer(f"{workers = }: "):
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 results = executor.map(
-                    lambda node: has_loop(pairwise(walk(grid, node))),
+                    lambda node: loops(pairwise(walk(grid, node))),
                     candidates,
                 )
             print("part2", sum(1 for r in results if r), end="; ")
