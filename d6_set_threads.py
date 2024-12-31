@@ -98,7 +98,9 @@ class Grid:
 
         assert start is not None
         return cls(
-            start, Ranges(range(coord[0] + 1), range(coord[1] + 1)), obstructions
+            start,
+            Ranges(range(coord[0] + 1), range(coord[1] + 1)),
+            obstructions,
         )
 
 

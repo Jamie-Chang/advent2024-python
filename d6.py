@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
-from enum import StrEnum
 from itertools import pairwise
 from pathlib import Path
 from typing import Hashable, Iterable, Iterator, Self, assert_never
@@ -21,12 +19,6 @@ def timer(message: str):
         )
 
 
-class Tile(StrEnum):
-    obstruction = "#"
-    empty = "."
-    start = "^"
-
-
 type Pair = tuple[int, int]
 
 
@@ -42,66 +34,68 @@ def turn(direction: int) -> int:
 
 @dataclass(slots=True)
 class Ranges:
-    dimensions: Pair
+    rows: range
+    cols: range
 
     def __getitem__(self, key: tuple[slice, int] | tuple[int, slice]) -> Iterator[Pair]:
-        rs = range(self.dimensions[0])
-        cs = range(self.dimensions[1])
         match key:
             case int() as r, slice() as cols:
-                return ((r, c) for c in cs[cols])
+                return ((r, c) for c in self.cols[cols])
             case slice() as rows, int() as c:
-                return ((r, c) for r in rs[rows])
+                return ((r, c) for r in self.rows[rows])
             case _ as other:
                 assert_never(other)
 
     def __contains__(self, key: Pair) -> bool:
         row, col = key
-        rs = range(self.dimensions[0])
-        cs = range(self.dimensions[1])
 
-        return row in rs and col in cs
+        return row in self.rows and col in self.cols
 
     def __iter__(self) -> Iterator[Pair]:
-        rs = range(self.dimensions[0])
-        cs = range(self.dimensions[1])
-
-        return ((row, col) for row in rs for col in cs)
+        return ((row, col) for row in self.rows for col in self.cols)
 
     def walk(self, start: Pair, direction: int) -> Iterator[Pair]:
-        rs = range(self.dimensions[0])
-        cs = range(self.dimensions[1])
-
         match direction:
             case 0:
-                return ((row, start[1]) for row in rs[start[0] :: -1])
+                return ((row, start[1]) for row in self.rows[start[0] :: -1])
             case 2:
-                return ((row, start[1]) for row in rs[start[0] :: 1])
+                return ((row, start[1]) for row in self.rows[start[0] :: 1])
             case 3:
-                return ((start[0], col) for col in cs[start[1] :: -1])
+                return ((start[0], col) for col in self.cols[start[1] :: -1])
             case 1:
-                return ((start[0], col) for col in cs[start[1] :: 1])
+                return ((start[0], col) for col in self.cols[start[1] :: 1])
             case _:
                 assert False
 
 
 @dataclass(slots=True)
 class Grid:
-    tiles: tuple[tuple[Tile, ...], ...]
+    start: Pair
+    tiles: tuple[tuple[bool, ...], ...]
 
     def get_ranges(self) -> Ranges:
-        return Ranges((len(self.tiles), len(self.tiles[0])))
+        return Ranges(range(len(self.tiles)), range(len(self.tiles[0])))
 
     @classmethod
     def from_lines(cls, lines: Iterable[str]) -> Self:
-        return cls(tuple(tuple(Tile(c) for c in line) for line in lines))
+        start = None
+        coord = (0, 0)
+        rows = []
+        for r, line in enumerate(lines):
+            row: list[bool] = []
+            for c, char in enumerate(line):
+                coord = (r, c)
 
-    def __getitem__(self, key: Pair) -> Tile:
+                if char == "^":
+                    start = coord
+                row.append(char == "#")
+            rows.append(tuple(row))
+
+        assert start is not None
+        return cls(start, tuple(rows))
+
+    def __getitem__(self, key: Pair) -> bool:
         return self.tiles[key[0]][key[1]]
-
-
-def get_start(m: Grid) -> Pair:
-    return next(key for key in m.get_ranges() if m[key] is Tile.start)
 
 
 @contextmanager
@@ -110,17 +104,18 @@ def read_lines(path: Path) -> Iterator[Iterator[str]]:
         yield (line.rstrip() for line in f)
 
 
-def walk(grid: Grid, start: Pair, obstruction: Pair | None = None) -> Iterator[Pair]:
+def walk(grid: Grid, obstruction: Pair | None = None) -> Iterator[Pair]:
     direction = up
-
     ranges = grid.get_ranges()
+    start = grid.start
+
     yield start
 
     while True:
         walk = pairwise(ranges.walk(start, direction))
 
         for prev, curr in walk:
-            if grid[curr] is Tile.obstruction or curr == obstruction:
+            if grid[curr] or curr == obstruction:
                 direction = turn(direction)
                 start = prev
                 break
@@ -143,17 +138,13 @@ if __name__ == "__main__":
     with read_lines(Path("inputs") / "d6.txt") as lines:
         grid = Grid.from_lines(lines)
 
-    start = get_start(grid)
-    path = set(walk(grid, start))
+    path = set(walk(grid))
     print("part1", len(path))
 
-    for workers in range(1, 12):
-        candidates = (node for node in path if node != start)
-
-        with timer(f"{workers = }: "):
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                results = executor.map(
-                    lambda node: has_loop(pairwise(walk(grid, start, node))),
-                    candidates,
-                )
-            print("part2", sum(1 for r in results if r), end="; ")
+    with timer("time:"):
+        candidates = (node for node in path if node != grid.start)
+        print(
+            "part2",
+            sum(1 for node in candidates if has_loop(pairwise(walk(grid, node)))),
+            end="; "
+        )
